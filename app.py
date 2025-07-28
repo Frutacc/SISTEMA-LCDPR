@@ -160,7 +160,7 @@ def show_lancamentos():
             "Participante","Histórico","Tipo","Entrada","Saída","Saldo","Categoria"
         ]], use_container_width=True, key="tbl_lancamentos")
 
-    with st.expander("➕ Novo Lançamento", key="exp_new_lanc"):
+    with st.expander("➕ Novo Lançamento", key="exp_new_lanc", expanded=False):
         with st.form("form_new_lanc", clear_on_submit=True):
             dn     = st.date_input("Data", date.today(), key="new_l_d")
             imv    = st.selectbox("Imóvel", list(mapa_i.keys()), format_func=lambda x: mapa_i[x], key="new_l_imv")
@@ -274,7 +274,7 @@ def show_cadastros():
         ))
         st.dataframe(df_im, use_container_width=True, key="tbl_im")
 
-        with st.expander("➕ Novo Imóvel", key="exp_new_imov"):
+        with st.expander("➕ Novo Imóvel", expanded=False):
             with st.form("form_new_imov", clear_on_submit=True):
                 cod     = st.text_input("Código", key="im_new_cod")
                 nome    = st.text_input("Nome", key="im_new_nome")
@@ -356,7 +356,7 @@ def show_cadastros():
         ))
         st.dataframe(df_ct, use_container_width=True, key="tbl_ct")
 
-        with st.expander("➕ Nova Conta", key="exp_new_ct"):
+        with st.expander("➕ Nova Conta", key="exp_new_ct", expanded=False):
             with st.form("form_new_ct", clear_on_submit=True):
                 cod_ct = st.text_input("Código", key="ct_new_cod")
                 nb_ct  = st.text_input("Banco", key="ct_new_nb")
@@ -410,7 +410,7 @@ def show_cadastros():
         raw_pa = supa_get("participante", "id,cpf_cnpj,nome,tipo_contraparte,data_cadastro")
         df_pa = pd.DataFrame(raw_pa)
 
-        with st.expander("➕ Novo Participante", key="exp_new_pa"):
+        with st.expander("➕ Novo Participante", key="exp_new_pa", expanded=False):
             with st.form("form_new_pa", clear_on_submit=True):
                 cpf = st.text_input("CPF/CNPJ", key="pa_new_cpf")
                 nome = st.text_input("Nome", key="pa_new_nome")
@@ -482,7 +482,7 @@ def show_cadastros():
         df_cu = pd.DataFrame(supa_get("cultura","id,nome,tipo,ciclo,unidade_medida"))
         st.dataframe(df_cu, use_container_width=True, key="tbl_cu")
 
-        with st.expander("➕ Nova Cultura", key="exp_new_cu"):
+        with st.expander("➕ Nova Cultura", key="exp_new_cu", expanded=False):
             with st.form("form_new_cu", clear_on_submit=True):
                 nm = st.text_input("Nome", key="cu_new_nm")
                 tp = st.text_input("Tipo", key="cu_new_tp")
@@ -541,7 +541,7 @@ def show_cadastros():
                 "data_plantio","data_colheita_estimada","produtividade_estimada"
             ]], use_container_width=True, key="tbl_ar")
 
-        with st.expander("➕ Nova Área", key="exp_new_ar"):
+        with st.expander("➕ Nova Área", key="exp_new_ar", expanded=False):
             with st.form("form_new_ar", clear_on_submit=True):
                 imv = st.selectbox("Imóvel", options=list(mapa_i.keys()), format_func=lambda x: mapa_i[x], key="ar_new_imv")
                 cul = st.selectbox("Cultura",options=list(mapa_c.keys()), format_func=lambda x: mapa_c[x], key="ar_new_cul")
@@ -617,7 +617,7 @@ def show_cadastros():
                 "valor_unitario","local_armazenamento","data_validade","Imóvel"
             ]], use_container_width=True, key="tbl_es")
 
-        with st.expander("➕ Novo Estoque", key="exp_new_es"):
+        with st.expander("➕ Novo Estoque", key="exp_new_es", expanded=False):
             with st.form("form_new_es", clear_on_submit=True):
                 prod  = st.text_input("Produto", key="es_new_prod")
                 qt    = st.number_input("Quantidade", format="%.2f", key="es_new_qt")
