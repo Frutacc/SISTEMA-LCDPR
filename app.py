@@ -226,7 +226,7 @@ elif page == "Cadastros":
         st.subheader("🏠 Imóveis Rurais")
         df_im = pd.DataFrame(supa_get(
             "imovel_rural",
-            "id,cod_imovel,nome_imovel,uf,area_total,area_utilizada,participacao"
+            "id,cod_imovel,nome_imovel,endereco,bairro,uf,cod_mun,cep,tipo_exploracao,participacao,area_total,area_utilizada"
         ))
         st.dataframe(df_im, use_container_width=True, key="tbl_im")
         with st.form("form_im_new", clear_on_submit=True):
@@ -258,11 +258,19 @@ elif page == "Cadastros":
                     "area_utilizada": au
                 })
                 st.success("Imóvel criado!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
             except requests.HTTPError as e:
                 # exibe o status e o JSON de erro que o Supabase devolve
                 st.error(f"Erro {e.response.status_code}: {e.response.text}")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_im.empty:
             sel_im = st.selectbox("ID p/ Editar/Excluir", df_im["id"].tolist(), key="sel_im")
             c1, c2 = st.columns(2)
@@ -293,12 +301,20 @@ elif page == "Cadastros":
                             "area_total":at_e, "area_utilizada":au_e
                         })
                         st.success("Imóvel atualizado!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Imóvel", key="btn_del_im"):
                     supa_delete("imovel_rural","id",sel_im)
                     st.success("Imóvel excluído!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhum imóvel cadastrado ainda.", icon="ℹ️")
 
@@ -318,7 +334,11 @@ elif page == "Cadastros":
             if ok_ct:
                 supa_insert("conta_bancaria",{"cod_conta":cod_ct,"nome_banco":nb_ct,"agencia":ag_ct,"num_conta":nc_ct,"saldo_inicial":si_ct})
                 st.success("Conta criada!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_ct.empty:
             sel_ct = st.selectbox("ID p/ Editar/Excluir", df_ct["id"].tolist(), key="sel_ct")
             c1,c2 = st.columns(2)
@@ -335,12 +355,20 @@ elif page == "Cadastros":
                     if ok2:
                         supa_update("conta_bancaria","id",sel_ct,{"cod_conta":cod_e,"nome_banco":nb_e,"agencia":ag_e,"num_conta":nc_e,"saldo_inicial":si_e})
                         st.success("Conta atualizada!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Conta", key="btn_del_ct"):
                     supa_delete("conta_bancaria","id",sel_ct)
                     st.success("Conta excluída!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhuma conta cadastrada ainda.", icon="ℹ️")
 
@@ -358,7 +386,11 @@ elif page == "Cadastros":
             if ok:
                 supa_insert("participante",{"cpf_cnpj":cpf,"nome":no,"tipo_contraparte":["PF","PJ","Órgão Público","Outros"].index(tp)+1})
                 st.success("Participante criado!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_pa.empty:
             df_pa["CPF/CNPJ"] = df_pa["cpf_cnpj"].apply(format_cpf_cnpj)
             df_pa["Tipo"]     = df_pa["tipo_contraparte"].map({1:"PF",2:"PJ",3:"Órgão Público",4:"Outros"})
@@ -377,12 +409,20 @@ elif page == "Cadastros":
                     if ok2:
                         supa_update("participante","id",sel_pa,{"cpf_cnpj":cpf_e,"nome":no_e,"tipo_contraparte":["PF","PJ","Órgão Público","Outros"].index(tp_e)+1})
                         st.success("Participante atualizado!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Participante", key="btn_del_pa"):
                     supa_delete("participante","id",sel_pa)
                     st.success("Participante excluído!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhum participante cadastrado ainda.", icon="ℹ️")
 
@@ -401,7 +441,11 @@ elif page == "Cadastros":
             if ok:
                 supa_insert("cultura",{"nome":nm,"tipo":tp,"ciclo":ci,"unidade_medida":um})
                 st.success("Cultura criada!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_cu.empty:
             sel_cu = st.selectbox("ID p/ Editar/Excluir", df_cu["id"].tolist(), key="sel_cu")
             c1,c2 = st.columns(2)
@@ -417,12 +461,20 @@ elif page == "Cadastros":
                     if ok2:
                         supa_update("cultura","id",sel_cu,{"nome":nm_e,"tipo":tp_e,"ciclo":ci_e,"unidade_medida":um_e})
                         st.success("Cultura atualizada!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Cultura", key="btn_del_cu"):
                     supa_delete("cultura","id",sel_cu)
                     st.success("Cultura excluída!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhuma cultura cadastrada.", icon="ℹ️")
 
@@ -448,7 +500,11 @@ elif page == "Cadastros":
             if ok:
                 supa_insert("area_producao",{"imovel_id":imv_ar,"cultura_id":cul_ar,"area":ar,"data_plantio":dp.isoformat(),"data_colheita_estimada":dc.isoformat(),"produtividade_estimada":pe})
                 st.success("Área criada!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_ar.empty:
             sel_ar = st.selectbox("ID p/ Editar/Excluir", df_ar["id"].tolist(), key="sel_ar")
             c1,c2 = st.columns(2)
@@ -466,12 +522,20 @@ elif page == "Cadastros":
                     if ok2:
                         supa_update("area_producao","id",sel_ar,{"imovel_id":imv_e,"cultura_id":cu_e,"area":ar_e,"data_plantio":dp_e.isoformat(),"data_colheita_estimada":dc_e.isoformat(),"produtividade_estimada":pe_e})
                         st.success("Área atualizada!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Área", key="btn_del_ar"):
                     supa_delete("area_producao","id",sel_ar)
                     st.success("Área excluída!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhuma área cadastrada.", icon="ℹ️")
 
@@ -497,7 +561,11 @@ elif page == "Cadastros":
             if ok:
                 supa_insert("estoque",{"produto":prod,"quantidade":qt,"unidade_medida":um,"valor_unitario":vu,"local_armazenamento":la,"data_entrada":de.isoformat(),"data_validade":dv.isoformat(),"imovel_id":imv_es})
                 st.success("Estoque criado!", icon="✅")
-                st.experimental_rerun()
+                # força o app a parar e reexecutar
+                try:
+                    st.experimental_rerun()
+                except AttributeError:
+                    st.stop()
         if not df_es.empty:
             sel_es = st.selectbox("ID p/ Editar/Excluir", df_es["id"].tolist(), key="sel_es")
             c1,c2 = st.columns(2)
@@ -517,12 +585,20 @@ elif page == "Cadastros":
                     if ok2:
                         supa_update("estoque","id",sel_es,{"produto":prod_e,"quantidade":qt_e,"unidade_medida":um_e,"valor_unitario":vu_e,"local_armazenamento":la_e,"data_entrada":de_e.isoformat(),"data_validade":dv_e.isoformat(),"imovel_id":imv_e})
                         st.success("Estoque atualizado!", icon="✅")
-                        st.experimental_rerun()
+                        # força o app a parar e reexecutar
+                        try:
+                            st.experimental_rerun()
+                        except AttributeError:
+                            st.stop()
             with c2:
                 if st.button("🗑️ Excluir Estoque", key="btn_del_es"):
                     supa_delete("estoque","id",sel_es)
                     st.success("Estoque excluído!", icon="✅")
-                    st.experimental_rerun()
+                    # força o app a parar e reexecutar
+                    try:
+                        st.experimental_rerun()
+                    except AttributeError:
+                        st.stop()
         else:
             st.info("Nenhum item em estoque.", icon="ℹ️")
 
