@@ -27,13 +27,19 @@ def supa_insert(table, payload):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     r = requests.post(url, headers=HEADERS, data=json.dumps(payload))
     r.raise_for_status()
-    return r.json()
+    try:
+        return r.json()
+    except (ValueError, json.JSONDecodeError):
+        return None
 
 def supa_update(table, key, key_val, payload):
     url = f"{SUPABASE_URL}/rest/v1/{table}?{key}=eq.{key_val}"
     r = requests.patch(url, headers=HEADERS, data=json.dumps(payload))
     r.raise_for_status()
-    return r.json()
+    try:
+        return r.json()
+    except (ValueError, json.JSONDecodeError):
+        return None
 
 def supa_delete(table, key, key_val):
     url = f"{SUPABASE_URL}/rest/v1/{table}?{key}=eq.{key_val}"
