@@ -267,27 +267,25 @@ def show_cadastros():
     # ---- Imóveis ----
     with tabs[0]:
         st.subheader("Imóveis Rurais")
-        df_im = pd.DataFrame(supa_get(
-            "imovel_rural",
-            "id,cod_imovel,nome_imovel,endereco,bairro,uf,cod_mun,cep,"
-            "tipo_exploracao,participacao,area_total,area_utilizada"
-        ))
-        st.dataframe(df_im, use_container_width=True, key="tbl_im")
+        df_im = pd.DataFrame(…)
+        st.dataframe(df_im, …)
 
+        # remove the key= and put the submit button inside the form
         with st.expander("➕ Novo Imóvel", expanded=False):
             with st.form("form_new_imov", clear_on_submit=True):
-                cod     = st.text_input("Código", key="im_new_cod")
-                nome    = st.text_input("Nome", key="im_new_nome")
-                end     = st.text_input("Endereço", key="im_new_end")
-                bairro  = st.text_input("Bairro", key="im_new_bairro")
-                uf      = st.text_input("UF", key="im_new_uf")
-                cm      = st.text_input("Cód. Município", key="im_new_cm")
-                cep     = st.text_input("CEP", key="im_new_cep")
-                te      = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="im_new_te")
-                part    = st.number_input("Participação (%)", value=100.0, format="%.2f", key="im_new_part")
-                at      = st.number_input("Área Total (ha)", format="%.2f", key="im_new_at")
-                au      = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
-                btn_i   = st.form_submit_button("Salvar", key="btn_new_imov")
+                cod     = st.text_input("Código")
+                nome    = st.text_input("Nome")
+                end     = st.text_input("Endereço")
+                bairro  = st.text_input("Bairro")
+                uf      = st.text_input("UF")
+                cm      = st.text_input("Cód. Município")
+                cep     = st.text_input("CEP")
+                te      = st.selectbox("Tipo Exploração", [1,2,3,4,5,6])
+                part    = st.number_input("Participação (%)", value=100.0, format="%.2f")
+                at      = st.number_input("Área Total (ha)", format="%.2f")
+                au      = st.number_input("Área Utilizada (ha)", format="%.2f")
+                # **this** submit button must be _inside_ the with‑st.form block
+                btn_i   = st.form_submit_button("Salvar")
             if btn_i:
                 supa_insert("imovel_rural", {
                     "cod_imovel":      cod,
