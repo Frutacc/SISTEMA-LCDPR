@@ -243,29 +243,25 @@ elif page == "Cadastros":
             au      = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
             ok      = st.form_submit_button("Salvar")
         if ok:
-            supa_insert("imovel_rural", {
-                "cod_imovel":        cod,
-                "nome_imovel":       nome,
-                "endereco":          end,
-                "bairro":            bairro,       # <= inclua aqui
-                "uf":                uf,
-                "cod_mun":           cm,
-                "cep":               cep,
-                "tipo_exploracao":   te,
-                "participacao":      part,
-                "area_total":        at,
-                "area_utilizada":    au
-            })
-            st.success("Imóvel criado!", icon="✅")
-            st.experimental_rerun()
-            if ok:
+            try:
                 supa_insert("imovel_rural", {
-                    "cod_imovel":cod, "nome_imovel":nome,
-                    "endereco":end, "uf":uf, "cod_mun":cm, "cep":cep,
-                    "tipo_exploracao":te, "participacao":part,
-                    "area_total":at, "area_utilizada":au
+                    "cod_imovel":     cod,
+                    "nome_imovel":    nome,
+                    "endereco":       end,
+                    "bairro":         bairro,
+                    "uf":             uf,
+                    "cod_mun":        cm,
+                    "cep":            cep,
+                    "tipo_exploracao":te,
+                    "participacao":   part,
+                    "area_total":     at,
+                    "area_utilizada": au
                 })
                 st.success("Imóvel criado!", icon="✅")
+                st.experimental_rerun()
+            except requests.HTTPError as e:
+                # exibe o status e o JSON de erro que o Supabase devolve
+                st.error(f"Erro {e.response.status_code}: {e.response.text}")
                 st.experimental_rerun()
         if not df_im.empty:
             sel_im = st.selectbox("ID p/ Editar/Excluir", df_im["id"].tolist(), key="sel_im")
