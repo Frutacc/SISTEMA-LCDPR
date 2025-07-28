@@ -393,51 +393,73 @@ def show_cadastros():
 
     # ---- Participantes ----
     with tabs[2]:
-        st.subheader("Participantes")
-        raw_pa = supa_get("participante","id,cpf_cnpj,nome,tipo_contraparte,data_cadastro")
-        df_pa  = pd.DataFrame(raw_pa)
-        df_pa["CPF/CNPJ"] = df_pa["cpf_cnpj"].map(format_cpf_cnpj)
-        df_pa["Tipo"]     = df_pa["tipo_contraparte"].map({1:"PF",2:"PJ",3:"Órgão Público",4:"Outros"})
-        st.dataframe(df_pa[["id","CPF/CNPJ","nome","Tipo","data_cadastro"]], use_container_width=True)
+        st.subheader("👥 Participantes")
+        raw_pa = supa_get(
+            "participante",
+            "id,cpf_cnpj,nome,tipo_contraparte,data_cadastro"
+        )
 
-        with st.expander("➕ Novo Participante"):
-            with st.form("form_new_pa", clear_on_submit=True):
-                cpf = st.text_input("CPF/CNPJ")
-                no  = st.text_input("Nome")
-                tp  = st.selectbox("Tipo", ["PF","PJ","Órgão Público","Outros"])
-                btn = st.form_submit_button("Salvar")
-            if btn:
-                supa_insert("participante", {
-                    "cpf_cnpj": cpf, "nome": no,
-                    "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp)+1
-                })
-                st.success("Participante criado!")
-                rerun_app()
+        # Se não houver participantes, mostramos apenas o info
+        if not raw_pa:
+            st.info("Nenhum participante cadastrado ainda.", icon="ℹ️")
+        else:
+            # Só agora criamos o DataFrame
+            df_pa = pd.DataFrame(raw_pa)
+            df_pa["CPF/CNPJ"] = df_pa["cpf_cnpj"].map(format_cpf_cnpj)
+            df_pa["Tipo"]     = df_pa["tipo_contraparte"].map({
+                1: "PF", 2: "PJ", 3: "Órgão Público", 4: "Outros"
+            })
+            st.dataframe(
+                df_pa[["id","CPF/CNPJ","nome","Tipo","data_cadastro"]],
+                use_container_width=True,
+                key="tbl_pa"
+            )
 
-        if not df_pa.empty:
-            sel_pa = st.selectbox("ID p/ Editar/Excluir", df_pa["id"].tolist())
+            # formulário de criação
+            with st.expander("➕ Novo Participante"):
+                with st.form("form_new_pa", clear_on_submit=True):
+                    cpf = st.text_input("CPF/CNPJ")
+                    no  = st.text_input("Nome")
+                    tp  = st.selectbox("Tipo", ["PF","PJ","Órgão Público","Outros"])
+                    btn = st.form_submit_button("Salvar")
+                if btn:
+                    supa_insert("participante", {
+                        "cpf_cnpj": cpf,
+                        "nome": no,
+                        "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp) + 1
+                    })
+                    st.success("Participante criado!", icon="✅")
+                    rerun_app()
+
+            # edit / delete
+            sel_pa = st.selectbox("ID p/ Editar/Excluir", df_pa["id"].tolist(), key="sel_pa")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✏️ Editar Participante"):
-                    rec = df_pa.loc[df_pa["id"]==sel_pa].iloc[0]
+                    rec = df_pa.loc[df_pa["id"] == sel_pa].iloc[0]
                     with st.form("form_edit_pa", clear_on_submit=True):
                         cpf_e = st.text_input("CPF/CNPJ", rec["cpf_cnpj"])
                         no_e  = st.text_input("Nome", rec["nome"])
-                        tp_e  = st.selectbox("Tipo", ["PF","PJ","Órgão Público","Outros"],
-                                            index=["PF","PJ","Órgão Público","Outros"].index(rec["Tipo"]))
+                        tp_e  = st.selectbox(
+                            "Tipo",
+                            ["PF","PJ","Órgão Público","Outros"],
+                            index=["PF","PJ","Órgão Público","Outros"].index(rec["Tipo"])
+                        )
                         btn_e = st.form_submit_button("Atualizar")
                     if btn_e:
-                        supa_update("participante","id",sel_pa,{
-                            "cpf_cnpj": cpf_e, "nome": no_e,
-                            "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp_e)+1
+                        supa_update("participante", "id", sel_pa, {
+                            "cpf_cnpj": cpf_e,
+                            "nome": no_e,
+                            "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp_e) + 1
                         })
-                        st.success("Participante atualizado!")
+                        st.success("Participante atualizado!", icon="✅")
                         rerun_app()
             with c2:
                 if st.button("🗑️ Excluir Participante"):
-                    supa_delete("participante","id",sel_pa)
-                    st.success("Participante excluído!")
+                    supa_delete("participante", "id", sel_pa)
+                    st.success("Participante excluído!", icon="✅")
                     rerun_app()
+
 
     # ---- Culturas ----
     with tabs[3]:
