@@ -188,7 +188,17 @@ def show_lancamentos():
                 st.success("Lançamento criado!", icon="✅")
                 rerun_app()
             except requests.HTTPError as e:
-                st.error(f"Erro {e.response.status_code}: {e.response.text}")
+                # Se for conflito de FK no Supabase (código 23503), aviso específico
+                if e.response.status_code == 409 and "violates foreign key constraint" in e.response.text:
+                    st.error(
+                        "Não foi possível criar o lançamento: o Imóvel, Conta ou Participante selecionado não existe mais.\n"
+                        "Verifique se ele ainda está cadastrado em Cadastros antes de tentar novamente.",
+                        icon="🚫"
+                    )
+                else:
+                    # Qualquer outro erro
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", icon="❌")
+
 
     if not df.empty:
         sel = st.selectbox("ID p/ Editar/Excluir", df["id"].tolist(), key="sel_lanc")
