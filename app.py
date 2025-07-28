@@ -3,569 +3,710 @@ import requests, json
 from datetime import date, datetime, timedelta
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 
-# --- Configurações Iniciais ---
+# --- Configurações da página ---
 st.set_page_config(
     page_title="AgroContábil - LCDPR",
-    page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- Estilos Customizados ---
-with open('style.css') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-
-# --- Supabase via REST ---
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
+# --- Supabase via REST (credenciais via secrets) ---
+SUPABASE_URL      = st.secrets["SUPABASE_URL"]
 SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 HEADERS = {
-    "apikey": SUPABASE_ANON_KEY,
+    "apikey":        SUPABASE_ANON_KEY,
     "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
+    "Content-Type":  "application/json"
 }
 
-# --- Utilitários Supabase ---
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_data(table, select="*", filters=None):
-    """Obtém dados do Supabase com cache"""
+# --- Helpers Supabase CRUD ---
+@st.cache_data(ttl=300)
+def supa_get(table, select="*", filters=None):
     url = f"{SUPABASE_URL}/rest/v1/{table}?select={select}"
     if filters:
         url += "&" + "&".join(filters)
-    try:
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Erro na conexão: {str(e)}")
-        return []
+    resp = requests.get(url, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json()
 
-def insert_data(table, payload):
-    """Insere novos registros"""
+def supa_insert(table, payload):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
+    resp = requests.post(url, headers=HEADERS, data=json.dumps(payload))
+    resp.raise_for_status()
     try:
-        response = requests.post(url, headers=HEADERS, data=json.dumps(payload))
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Erro na inserção: {str(e)}")
+        return resp.json()
+    except (ValueError, json.JSONDecodeError):
         return None
 
-def update_data(table, key, key_val, payload):
-    """Atualiza registros existentes"""
+def supa_update(table, key, key_val, payload):
     url = f"{SUPABASE_URL}/rest/v1/{table}?{key}=eq.{key_val}"
+    resp = requests.patch(url, headers=HEADERS, data=json.dumps(payload))
+    resp.raise_for_status()
     try:
-        response = requests.patch(url, headers=HEADERS, data=json.dumps(payload))
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Erro na atualização: {str(e)}")
+        return resp.json()
+    except (ValueError, json.JSONDecodeError):
         return None
 
-def delete_data(table, key, key_val):
-    """Remove registros"""
+def supa_delete(table, key, key_val):
     url = f"{SUPABASE_URL}/rest/v1/{table}?{key}=eq.{key_val}"
+    resp = requests.delete(url, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.status_code
+
+def format_cpf_cnpj(v: str) -> str:
+    d = "".join(filter(str.isdigit, v))
+    if len(d) == 11:
+        return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    if len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+    return v
+
+def rerun_app():
     try:
-        response = requests.delete(url, headers=HEADERS)
-        response.raise_for_status()
-        return response.status_code
-    except requests.exceptions.RequestException as e:
-        st.error(f"Erro na exclusão: {str(e)}")
-        return None
+        st.experimental_rerun()
+    except:
+        st.stop()
 
-# --- Utilitários Gerais ---
-def format_currency(value):
-    """Formata valores monetários"""
-    return f"R$ {value:,.2f}"
-
-def format_date(dt):
-    """Formata datas para formato brasileiro"""
-    return dt.strftime("%d/%m/%Y") if isinstance(dt, date) else dt
-
-def format_cpf_cnpj(value):
-    """Formata CPF/CNPJ"""
-    digits = "".join(filter(str.isdigit, str(value)))
-    if len(digits) == 11:
-        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
-    if len(digits) == 14:
-        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
-    return value
-
-def calculate_financial_metrics(data):
-    """Calcula métricas financeiras"""
-    receitas = sum(x["valor_entrada"] for x in data)
-    despesas = sum(x["valor_saida"] for x in data)
-    saldo = receitas - despesas
-    return {
-        "saldo": saldo,
-        "receitas": receitas,
-        "despesas": despesas,
-        "saldo_percentual": (saldo / receitas * 100) if receitas else 0
-    }
-
-# --- Componentes de Interface ---
-def financial_summary_card(title, value, delta=None, icon="💰"):
-    """Componente de cartão de resumo financeiro"""
-    with st.container(border=True):
-        st.markdown(f"<div class='summary-card'>"
-                    f"<div class='icon'>{icon}</div>"
-                    f"<div class='content'>"
-                    f"<div class='title'>{title}</div>"
-                    f"<div class='value'>{format_currency(value)}</div>"
-                    f"{f'<div class=\"delta\">{delta}</div>' if delta else ''}"
-                    "</div></div>", unsafe_allow_html=True)
-
-def date_range_selector(default_start=None, default_end=None):
-    """Seletor de intervalo de datas"""
-    col1, col2 = st.columns(2)
+# --- 1) Painel ---
+def show_dashboard():
+    st.header("📊 Painel Financeiro")
+    col1, col2 = st.columns([1, 3])
     with col1:
-        start_date = st.date_input("Data Inicial", value=default_start or date.today().replace(day=1))
-    with col2:
-        end_date = st.date_input("Data Final", value=default_end or date.today())
-    return start_date, end_date
+        d1 = st.date_input("De",  date.today().replace(day=1), key="dash_d1")
+        d2 = st.date_input("Até", date.today(),              key="dash_d2")
+    dados = supa_get("lancamento", "valor_entrada,valor_saida",
+                     [f"data=gte.{d1}", f"data=lte.{d2}"])
+    rec   = sum(x["valor_entrada"] for x in dados)
+    desp  = sum(x["valor_saida"]   for x in dados)
+    saldo = rec - desp
 
-# --- Páginas do Sistema ---
-def dashboard_page():
-    """Página principal com dashboard financeiro"""
-    st.header("📊 Painel Financeiro", divider="green")
-    
-    # Intervalo de datas
-    start_date, end_date = date_range_selector()
-    
-    # Dados financeiros
-    lancamentos = fetch_data(
-        "lancamento", 
-        "valor_entrada, valor_saida", 
-        [f"data=gte.{start_date}", f"data=lte.{end_date}"]
-    )
-    
-    metrics = calculate_financial_metrics(lancamentos)
-    
-    # Cartões de resumo
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        financial_summary_card("Saldo Total", metrics["saldo"], f"{metrics['saldo_percentual']:.1f}%", "💰")
-    with col2:
-        financial_summary_card("Receitas", metrics["receitas"], icon="📈")
-    with col3:
-        financial_summary_card("Despesas", metrics["despesas"], icon="📉")
-    
-    # Gráfico de pizza
-    fig = px.pie(
-        names=["Receitas", "Despesas"],
-        values=[metrics["receitas"], metrics["despesas"]],
-        hole=0.6,
-        color_discrete_sequence=["#2ecc71", "#e74c3c"]
-    )
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    fig.update_layout(
-        showlegend=False,
-        margin=dict(t=0, b=0, l=0, r=0),
-        height=300
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Alertas de estoque
-    st.subheader("⚠️ Alertas de Estoque", divider="gray")
-    hoje = date.today().isoformat()
-    vencidos = fetch_data("estoque", "produto, data_validade", [f"data_validade<'{hoje}'"])
-    proximos = fetch_data(
-        "estoque", 
-        "produto, data_validade", 
-        [f"data_validade>='{hoje}'", f"data_validade<='{(date.today()+timedelta(30)).isoformat()}'"]
-    )
-    
-    if vencidos:
-        with st.expander("Produtos Vencidos", expanded=True):
-            for item in vencidos:
-                st.error(f"**{item['produto']}** - Venceu em {format_date(item['data_validade'])}")
-    
-    if proximos:
-        with st.expander("Próximos do Vencimento (30 dias)", expanded=True):
-            for item in proximos:
-                st.warning(f"**{item['produto']}** - Vence em {format_date(item['data_validade'])}")
-    
-    # Últimas atividades
-    st.subheader("🕒 Últimas Atividades", divider="gray")
-    atividades = fetch_data(
-        "lancamento",
-        "data, historico, valor_entrada, valor_saida",
-        ["order=data.desc", "limit=10"]
-    )
-    
-    if atividades:
-        df_atividades = pd.DataFrame(atividades)
-        df_atividades["Valor"] = df_atividades["valor_entrada"] - df_atividades["valor_saida"]
-        df_atividades["Data"] = pd.to_datetime(df_atividades["data"]).dt.strftime("%d/%m/%Y")
-        df_atividades = df_atividades[["Data", "historico", "Valor"]]
-        df_atividades.columns = ["Data", "Descrição", "Valor (R$)"]
-        
-        st.dataframe(
-            df_atividades,
-            use_container_width=True,
-            hide_index=True,
-            column_config={"Valor (R$)": st.column_config.NumberColumn(format="%.2f")}
-        )
-    else:
-        st.info("Nenhuma atividade recente encontrada", icon="ℹ️")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("💰 Saldo Total", f"R$ {saldo:,.2f}", key="met_saldo")
+    m2.metric("📈 Receitas"   , f"R$ {rec:,.2f}",   key="met_receitas")
+    m3.metric("📉 Despesas"   , f"R$ {desp:,.2f}",   key="met_despesas")
 
-def entries_page():
-    """Página de gestão de lançamentos financeiros"""
-    st.header("📝 Gestão de Lançamentos", divider="green")
-    
-    # Filtros
-    st.subheader("Filtros")
-    start_date, end_date = date_range_selector(
-        default_start=date.today().replace(day=1),
-        default_end=date.today()
-    )
-    
-    # Dados complementares
-    propriedades = fetch_data("imovel_rural", "id, nome_imovel")
-    propriedades_map = {p["id"]: p["nome_imovel"] for p in propriedades}
-    
-    contas = fetch_data("conta_bancaria", "id, nome_banco")
-    contas_map = {c["id"]: c["nome_banco"] for c in contas}
-    
-    # Buscar lançamentos
-    lancamentos = fetch_data(
-        "lancamento",
-        "id, data, cod_imovel, cod_conta, historico, tipo_lanc, valor_entrada, valor_saida, saldo_final, natureza_saldo, categoria",
-        [f"data>=gte.{start_date}", f"data<=lte.{end_date}", "order=data.desc"]
-    )
-    
-    # Processar dados
-    if lancamentos:
-        df = pd.DataFrame(lancamentos)
-        df["Propriedade"] = df["cod_imovel"].map(propriedades_map)
-        df["Conta"] = df["cod_conta"].map(contas_map)
-        df["Tipo"] = df["tipo_lanc"].map({1: "Receita", 2: "Despesa", 3: "Adiantamento"})
-        df["Valor Líquido"] = df.apply(
-            lambda x: x["valor_entrada"] - x["valor_saida"], axis=1
-        )
-        df["Data"] = pd.to_datetime(df["data"]).dt.strftime("%d/%m/%Y")
-        
-        # Exibir tabela
-        st.subheader("Lançamentos Registrados")
-        st.dataframe(
-            df[["id", "Data", "Propriedade", "Conta", "historico", "Tipo", "Valor Líquido", "categoria"]],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "id": "ID",
-                "historico": "Descrição",
-                "categoria": "Categoria",
-                "Valor Líquido": st.column_config.NumberColumn(format="R$ %.2f")
-            }
-        )
-    else:
-        st.info("Nenhum lançamento encontrado no período selecionado", icon="ℹ️")
-    
-    # Operações CRUD
-    st.subheader("Operações", divider="gray")
-    tab_novo, tab_editar, tab_excluir = st.tabs(["Novo Lançamento", "Editar Lançamento", "Excluir Lançamento"])
-    
-    with tab_novo:
-        with st.form("form_novo_lancamento", clear_on_submit=True):
-            st.write("### Adicionar Novo Lançamento")
-            col1, col2 = st.columns(2)
-            with col1:
-                data_lanc = st.date_input("Data", value=date.today())
-                propriedade = st.selectbox(
-                    "Propriedade",
-                    options=list(propriedades_map.keys()),
-                    format_func=lambda x: propriedades_map[x]
-                )
-                conta = st.selectbox(
-                    "Conta Bancária",
-                    options=list(contas_map.keys()),
-                    format_func=lambda x: contas_map[x]
-                )
-            with col2:
-                tipo = st.selectbox("Tipo", ["Receita", "Despesa", "Adiantamento"])
-                entrada = st.number_input("Valor de Entrada", min_value=0.0, value=0.0, step=0.01)
-                saida = st.number_input("Valor de Saída", min_value=0.0, value=0.0, step=0.01)
-            
-            historico = st.text_input("Descrição")
-            categoria = st.text_input("Categoria")
-            
-            if st.form_submit_button("Salvar Lançamento"):
-                payload = {
-                    "data": data_lanc.isoformat(),
-                    "cod_imovel": propriedade,
-                    "cod_conta": conta,
-                    "historico": historico,
-                    "tipo_lanc": ["Receita", "Despesa", "Adiantamento"].index(tipo) + 1,
-                    "valor_entrada": entrada,
-                    "valor_saida": saida,
-                    "saldo_final": abs(entrada - saida),
-                    "natureza_saldo": "P" if entrada >= saida else "N",
-                    "categoria": categoria
-                }
-                if insert_data("lancamento", payload):
-                    st.success("Lançamento registrado com sucesso!", icon="✅")
-                    st.rerun()
-    
-    if lancamentos:
-        lancamentos_ids = [l["id"] for l in lancamentos]
-        
-        with tab_editar:
-            lanc_id = st.selectbox("Selecione o lançamento para editar", lancamentos_ids)
-            lancamento = next((l for l in lancamentos if l["id"] == lanc_id), None)
-            
-            if lancamento:
-                with st.form("form_editar_lancamento"):
-                    st.write("### Editar Lançamento Existente")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        data_edit = st.date_input("Data", value=datetime.fromisoformat(lancamento["data"]).date())
-                        propriedade_edit = st.selectbox(
-                            "Propriedade",
-                            options=list(propriedades_map.keys()),
-                            index=list(propriedades_map.keys()).index(lancamento["cod_imovel"]),
-                            format_func=lambda x: propriedades_map[x]
-                        )
-                        conta_edit = st.selectbox(
-                            "Conta Bancária",
-                            options=list(contas_map.keys()),
-                            index=list(contas_map.keys()).index(lancamento["cod_conta"]),
-                            format_func=lambda x: contas_map[x]
-                        )
-                    with col2:
-                        tipo_edit = st.selectbox(
-                            "Tipo",
-                            ["Receita", "Despesa", "Adiantamento"],
-                            index=lancamento["tipo_lanc"] - 1
-                        )
-                        entrada_edit = st.number_input(
-                            "Valor de Entrada", 
-                            min_value=0.0, 
-                            value=float(lancamento["valor_entrada"]),
-                            step=0.01
-                        )
-                        saida_edit = st.number_input(
-                            "Valor de Saída", 
-                            min_value=0.0, 
-                            value=float(lancamento["valor_saida"]),
-                            step=0.01
-                        )
-                    
-                    historico_edit = st.text_input("Descrição", value=lancamento["historico"])
-                    categoria_edit = st.text_input("Categoria", value=lancamento["categoria"])
-                    
-                    if st.form_submit_button("Atualizar Lançamento"):
-                        payload = {
-                            "data": data_edit.isoformat(),
-                            "cod_imovel": propriedade_edit,
-                            "cod_conta": conta_edit,
-                            "historico": historico_edit,
-                            "tipo_lanc": ["Receita", "Despesa", "Adiantamento"].index(tipo_edit) + 1,
-                            "valor_entrada": entrada_edit,
-                            "valor_saida": saida_edit,
-                            "saldo_final": abs(entrada_edit - saida_edit),
-                            "natureza_saldo": "P" if entrada_edit >= saida_edit else "N",
-                            "categoria": categoria_edit
-                        }
-                        if update_data("lancamento", "id", lanc_id, payload):
-                            st.success("Lançamento atualizado com sucesso!", icon="✅")
-                            st.rerun()
-        
-        with tab_excluir:
-            lanc_id_del = st.selectbox("Selecione o lançamento para excluir", lancamentos_ids)
-            if st.button("Confirmar Exclusão", type="primary"):
-                if delete_data("lancamento", "id", lanc_id_del) == 204:
-                    st.success("Lançamento excluído com sucesso!", icon="✅")
-                    st.rerun()
+    fig = go.Figure(go.Pie(
+        labels=["Receitas", "Despesas"],
+        values=[rec, desp],
+        hole=0.4,
+        textinfo="label+percent"
+    ))
+    fig.update_layout(transition={"duration":500,"easing":"cubic-in-out"})
+    st.plotly_chart(fig, use_container_width=True, key="dash_pie")
 
-def register_page():
-    """Página de cadastros do sistema"""
-    st.header("📇 Gestão de Cadastros", divider="green")
-    
-    tabs = st.tabs([
-        "🏠 Propriedades", 
-        "🏦 Contas Bancárias", 
-        "👥 Participantes",
-        "🌱 Culturas",
-        "🌾 Áreas de Produção",
-        "📦 Estoque"
+    st.subheader("⚠️ Alertas de Estoque")
+    hoje   = date.today().isoformat()
+    venc   = supa_get("estoque", "produto,data_validade", [f"data_validade=lt.{hoje}"])
+    prox30 = supa_get("estoque", "produto,data_validade", [
+        f"data_validade=gte.{hoje}",
+        f"data_validade=lte.{(date.today()+timedelta(30)).isoformat()}"
     ])
-    
-    # Tab 1: Propriedades Rurais
+    for idx, x in enumerate(venc):
+        st.warning(f"Vencido: {x['produto']} em {x['data_validade']}", icon="⚠️", key=f"warn_venc_{idx}")
+    for idx, x in enumerate(prox30):
+        st.info   (f"Vence em até 30d: {x['produto']} em {x['data_validade']}", key=f"info_prox30_{idx}")
+
+    st.subheader("🕒 Últimas Atividades")
+    acts = supa_get("lancamento", "data,historico,valor_entrada,valor_saida",
+                    ["order=data.desc","limit=5"])
+    tabela = [{
+        "Data":      a["data"],
+        "Descrição": a["historico"],
+        "Valor":     f"R$ {a['valor_entrada']-a['valor_saida']:,.2f}"
+    } for a in acts]
+    st.table(tabela)
+
+# --- 2) Lançamentos ---
+def show_lancamentos():
+    st.header("📝 Lançamentos")
+    d1 = st.date_input("Data inicial", date.today().replace(day=1), key="lanc_d1")
+    d2 = st.date_input("Data final",   date.today(),               key="lanc_d2")
+
+    imovs = supa_get("imovel_rural","id,nome_imovel")
+    mapa_i = {i["id"]: i["nome_imovel"] for i in imovs}
+    cts   = supa_get("conta_bancaria","id,nome_banco")
+    mapa_c = {c["id"]: c["nome_banco"]    for c in cts}
+    parts = supa_get("participante","id,nome")
+    mapa_p = {p["id"]: p["nome"]           for p in parts}
+
+    lans = supa_get(
+        "lancamento",
+        "id,data,cod_imovel,cod_conta,num_doc,tipo_doc,historico,id_participante,tipo_lanc,valor_entrada,valor_saida,saldo_final,natureza_saldo,categoria",
+        [f"data=gte.{d1}", f"data=lte.{d2}", "order=data.desc"]
+    )
+    df = pd.DataFrame(lans)
+    if df.empty:
+        st.info("Nenhum lançamento encontrado.", icon="ℹ️", key="info_no_lanc")
+    else:
+        df["Imóvel"]         = df["cod_imovel"].map(mapa_i)
+        df["Conta"]          = df["cod_conta"].map(mapa_c)
+        df["Nº Documento"]   = df["num_doc"].fillna("")
+        df["Tipo Doc"]       = df["tipo_doc"].map({1:"NF",2:"Recibo",3:"Boleto",4:"Outros"})
+        df["Participante"]   = df["id_participante"].map(mapa_p)
+        df["Tipo"]           = df["tipo_lanc"].map({1:"Receita",2:"Despesa",3:"Adiantamento"})
+        df["Saldo"]          = df.apply(lambda r: (1 if r["natureza_saldo"]=="P" else -1)*r["saldo_final"], axis=1)
+        df = df.rename(columns={
+            "data":"Data", "historico":"Histórico",
+            "valor_entrada":"Entrada", "valor_saida":"Saída",
+            "categoria":"Categoria"
+        })
+        st.dataframe(df[[
+            "id","Data","Imóvel","Conta","Nº Documento","Tipo Doc",
+            "Participante","Histórico","Tipo","Entrada","Saída","Saldo","Categoria"
+        ]], use_container_width=True, key="df_lancs")
+
+    # ➕ Novo Lançamento
+    with st.expander("➕ Novo Lançamento", key="exp_new_lanc"):
+        with st.form("form_new_lanc", clear_on_submit=True):
+            dn     = st.date_input("Data", date.today(), key="new_lanc_d")
+            imv    = st.selectbox("Imóvel", list(mapa_i.keys()), format_func=lambda x: mapa_i[x], key="new_lanc_imv")
+            cta    = st.selectbox("Conta",  list(mapa_c.keys()), format_func=lambda x: mapa_c[x], key="new_lanc_cta")
+            numdoc = st.text_input("Nº Documento", key="new_lanc_num")
+            tipod  = st.selectbox("Tipo Doc", ["NF","Recibo","Boleto","Outros"], key="new_lanc_tipo")
+            part   = st.selectbox("Participante", list(mapa_p.keys()), format_func=lambda x: mapa_p[x], key="new_lanc_part")
+            hist   = st.text_input("Histórico", key="new_lanc_hist")
+            tp     = st.selectbox("Tipo Lançamento", ["Receita","Despesa","Adiantamento"], key="new_lanc_tp")
+            ent    = st.number_input("Entrada", min_value=0.0, format="%.2f", key="new_lanc_ent")
+            sai    = st.number_input("Saída"   , min_value=0.0, format="%.2f", key="new_lanc_sai")
+            cat    = st.text_input("Categoria", key="new_lanc_cat")
+            btn_n  = st.form_submit_button("Salvar", key="btn_new_lanc")
+        if btn_n:
+            payload = {
+                "data": dn.isoformat(),
+                "cod_imovel": imv,
+                "cod_conta": cta,
+                "num_doc": numdoc or None,
+                "tipo_doc": ["NF","Recibo","Boleto","Outros"].index(tipod)+1,
+                "id_participante": part,
+                "historico": hist,
+                "tipo_lanc": ["Receita","Despesa","Adiantamento"].index(tp)+1,
+                "valor_entrada": ent,
+                "valor_saida": sai,
+                "saldo_final": abs(ent-sai),
+                "natureza_saldo": "P" if ent>=sai else "N",
+                "categoria": cat
+            }
+            try:
+                supa_insert("lancamento", payload)
+                st.success("Lançamento criado!", icon="✅", key="succ_new_lanc")
+                rerun_app()
+            except requests.HTTPError as e:
+                st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_lanc")
+
+    # ✏️ Editar / 🗑️ Excluir
+    if not df.empty:
+        sel = st.selectbox("ID p/ Editar/Excluir", df["id"].tolist(), key="sel_lanc")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("✏️ Editar Lançamento", key="btn_edit_lanc"):
+                rec = df.loc[df["id"]==sel].iloc[0]
+                with st.form("form_edit_lanc", clear_on_submit=True):
+                    de     = st.date_input("Data", datetime.fromisoformat(rec["Data"]).date(), key="edit_lanc_d")
+                    imv_e  = st.selectbox("Imóvel", list(mapa_i.keys()), format_func=lambda x: mapa_i[x],
+                                          index=list(mapa_i).index(rec["cod_imovel"]), key="edit_lanc_imv")
+                    cta_e  = st.selectbox("Conta", list(mapa_c.keys()), format_func=lambda x: mapa_c[x],
+                                          index=list(mapa_c).index(rec["cod_conta"]), key="edit_lanc_cta")
+                    num_e  = st.text_input("Nº Documento", rec["Nº Documento"], key="edit_lanc_num")
+                    tipo_e = st.selectbox("Tipo Doc", ["NF","Recibo","Boleto","Outros"],
+                                          index=["NF","Recibo","Boleto","Outros"].index(rec["Tipo Doc"]), key="edit_lanc_tipo")
+                    part_e = st.selectbox("Participante", list(mapa_p.keys()), format_func=lambda x: mapa_p[x],
+                                          index=list(mapa_p).index(rec["id_participante"]), key="edit_lanc_part")
+                    hist_e = st.text_input("Histórico", rec["Histórico"], key="edit_lanc_hist")
+                    tp_e   = st.selectbox("Tipo Lançamento", ["Receita","Despesa","Adiantamento"],
+                                          index=["Receita","Despesa","Adiantamento"].index(rec["Tipo"]), key="edit_lanc_tp")
+                    ent_e  = st.number_input("Entrada", value=rec["Entrada"], format="%.2f", key="edit_lanc_ent")
+                    sai_e  = st.number_input("Saída",   value=rec["Saída"],   format="%.2f", key="edit_lanc_sai")
+                    cat_e  = st.text_input("Categoria", rec["Categoria"], key="edit_lanc_cat")
+                    btn_e  = st.form_submit_button("Atualizar", key="btn_update_lanc")
+                if btn_e:
+                    payload = {
+                        "data": de.isoformat(),
+                        "cod_imovel": imv_e,
+                        "cod_conta": cta_e,
+                        "num_doc": num_e or None,
+                        "tipo_doc": ["NF","Recibo","Boleto","Outros"].index(tipo_e)+1,
+                        "id_participante": part_e,
+                        "historico": hist_e,
+                        "tipo_lanc": ["Receita","Despesa","Adiantamento"].index(tp_e)+1,
+                        "valor_entrada": ent_e,
+                        "valor_saida": sai_e,
+                        "saldo_final": abs(ent_e-sai_e),
+                        "natureza_saldo": "P" if ent_e>=sai_e else "N",
+                        "categoria": cat_e
+                    }
+                    try:
+                        supa_update("lancamento","id",sel,payload)
+                        st.success("Atualizado!", icon="✅", key="succ_upd_lanc")
+                        rerun_app()
+                    except requests.HTTPError as e:
+                        st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_lanc")
+        with c2:
+            if st.button("🗑️ Excluir Lançamento", key="btn_del_lanc"):
+                supa_delete("lancamento","id", sel)
+                st.success("Excluído!", icon="✅", key="succ_del_lanc")
+                rerun_app()
+
+# --- 3) Cadastros ---
+def show_cadastros():
+    st.header("📇 Cadastros")
+    tabs = st.tabs([
+        "🏠 Imóveis", "🏦 Contas", "👥 Participantes",
+        "🌱 Culturas", "📐 Áreas", "📦 Estoque"
+    ])
+
+    # ---- Imóveis ----
     with tabs[0]:
-        st.subheader("Cadastro de Propriedades Rurais")
-        
-        # Buscar dados
-        propriedades = fetch_data(
+        st.subheader("Imóveis Rurais")
+        df_im = pd.DataFrame(supa_get(
             "imovel_rural",
-            "id, cod_imovel, nome_imovel, endereco, bairro, uf, cod_mun, cep, tipo_exploracao, participacao, area_total, area_utilizada"
-        )
-        
-        # Exibir dados
-        if propriedades:
-            df_prop = pd.DataFrame(propriedades)
-            st.dataframe(
-                df_prop,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "id": "ID",
-                    "cod_imovel": "Código",
-                    "nome_imovel": "Nome",
-                    "endereco": "Endereço",
-                    "bairro": "Bairro",
-                    "uf": "UF",
-                    "cod_mun": "Cód. Município",
-                    "cep": "CEP",
-                    "tipo_exploracao": "Tipo Exploração",
-                    "participacao": st.column_config.NumberColumn(format="%.2f%%"),
-                    "area_total": st.column_config.NumberColumn(format="%.2f ha"),
-                    "area_utilizada": st.column_config.NumberColumn(format="%.2f ha")
+            "id,cod_imovel,nome_imovel,endereco,bairro,uf,cod_mun,cep,tipo_exploracao,participacao,area_total,area_utilizada"
+        ))
+        st.dataframe(df_im, use_container_width=True, key="tbl_imov")
+
+        with st.expander("➕ Novo Imóvel", key="exp_new_imov"):
+            with st.form("form_new_imov", clear_on_submit=True):
+                cod   = st.text_input("Código", key="new_im_cod")
+                nome  = st.text_input("Nome", key="new_im_nome")
+                end   = st.text_input("Endereço", key="new_im_end")
+                bairro= st.text_input("Bairro", key="new_im_bairro")
+                uf    = st.text_input("UF", key="new_im_uf")
+                cm    = st.text_input("Cód. Município", key="new_im_cm")
+                cep   = st.text_input("CEP", key="new_im_cep")
+                te    = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="new_im_te")
+                part  = st.number_input("Participação (%)", value=100.0, format="%.2f", key="new_im_part")
+                at    = st.number_input("Área Total (ha)", format="%.2f", key="new_im_at")
+                au    = st.number_input("Área Utilizada (ha)", format="%.2f", key="new_im_au")
+                btn_i = st.form_submit_button("Salvar", key="btn_new_imov")
+            if btn_i:
+                payload = {
+                    "cod_imovel":      cod,
+                    "nome_imovel":     nome,
+                    "endereco":        end,
+                    "bairro":          bairro,
+                    "uf":              uf,
+                    "cod_mun":         cm,
+                    "cep":             cep,
+                    "tipo_exploracao": te,
+                    "participacao":    part,
+                    "area_total":      at,
+                    "area_utilizada":  au
                 }
-            )
-        else:
-            st.info("Nenhuma propriedade cadastrada", icon="ℹ️")
-        
-        # Operações CRUD
-        with st.expander("Adicionar Nova Propriedade", expanded=False):
-            with st.form("form_nova_propriedade", clear_on_submit=True):
-                st.write("### Dados da Propriedade")
-                col1, col2 = st.columns(2)
-                with col1:
-                    codigo = st.text_input("Código da Propriedade*")
-                    nome = st.text_input("Nome da Propriedade*")
-                    endereco = st.text_input("Endereço*")
-                    bairro = st.text_input("Bairro")
-                with col2:
-                    uf = st.text_input("UF*", max_chars=2)
-                    municipio = st.text_input("Código do Município*")
-                    cep = st.text_input("CEP")
-                
-                st.write("### Informações Agrícolas")
-                col3, col4 = st.columns(2)
-                with col3:
-                    tipo_exp = st.selectbox("Tipo de Exploração*", options=list(range(1, 7)))
-                    participacao = st.number_input("Participação (%)*", min_value=0.0, max_value=100.0, value=100.0)
-                with col4:
-                    area_total = st.number_input("Área Total (ha)*", min_value=0.0)
-                    area_util = st.number_input("Área Utilizada (ha)", min_value=0.0)
-                
-                if st.form_submit_button("Salvar Propriedade"):
-                    if not all([codigo, nome, endereco, uf, municipio, tipo_exp, participacao, area_total]):
-                        st.error("Preencha os campos obrigatórios (*)")
-                    else:
+                try:
+                    supa_insert("imovel_rural", payload)
+                    st.success("Imóvel criado!", icon="✅", key="succ_new_imov")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_imov")
+
+        if not df_im.empty:
+            sel = st.selectbox("ID p/ Editar/Excluir", df_im["id"].tolist(), key="sel_imov")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Imóvel", key="btn_edit_imov"):
+                    rec = df_im.loc[df_im["id"]==sel].iloc[0]
+                    with st.form("form_edit_imov", clear_on_submit=True):
+                        cod_e    = st.text_input("Código", rec["cod_imovel"], key="edit_im_cod")
+                        nome_e   = st.text_input("Nome", rec["nome_imovel"], key="edit_im_nome")
+                        end_e    = st.text_input("Endereço", rec["endereco"], key="edit_im_end")
+                        bairro_e = st.text_input("Bairro", rec["bairro"], key="edit_im_bairro")
+                        uf_e     = st.text_input("UF", rec["uf"], key="edit_im_uf")
+                        cm_e     = st.text_input("Cód. Município", rec["cod_mun"], key="edit_im_cm")
+                        cep_e    = st.text_input("CEP", rec["cep"], key="edit_im_cep")
+                        te_e     = st.selectbox("Tipo Exploração", [1,2,3,4,5,6],
+                                                index=int(rec["tipo_exploracao"])-1, key="edit_im_te")
+                        part_e   = st.number_input("Participação (%)", value=rec["participacao"], format="%.2f", key="edit_im_part")
+                        at_e     = st.number_input("Área Total (ha)", value=rec["area_total"] or 0, format="%.2f", key="edit_im_at")
+                        au_e     = st.number_input("Área Utilizada (ha)", value=rec["area_utilizada"] or 0, format="%.2f", key="edit_im_au")
+                        btn_ie   = st.form_submit_button("Atualizar", key="btn_upd_imov")
+                    if btn_ie:
                         payload = {
-                            "cod_imovel": codigo,
-                            "nome_imovel": nome,
-                            "endereco": endereco,
-                            "bairro": bairro,
-                            "uf": uf,
-                            "cod_mun": municipio,
-                            "cep": cep,
-                            "tipo_exploracao": tipo_exp,
-                            "participacao": participacao,
-                            "area_total": area_total,
-                            "area_utilizada": area_util
+                            "cod_imovel":      cod_e,
+                            "nome_imovel":     nome_e,
+                            "endereco":        end_e,
+                            "bairro":          bairro_e,
+                            "uf":              uf_e,
+                            "cod_mun":         cm_e,
+                            "cep":             cep_e,
+                            "tipo_exploracao": te_e,
+                            "participacao":    part_e,
+                            "area_total":      at_e,
+                            "area_utilizada":  au_e
                         }
-                        if insert_data("imovel_rural", payload):
-                            st.success("Propriedade cadastrada com sucesso!", icon="✅")
-                            st.rerun()
-    
-    # As outras abas seguem padrão semelhante (implementação completa no código final)
-    # [Implementação completa disponível no repositório]
+                        try:
+                            supa_update("imovel_rural","id",sel,payload)
+                            st.success("Imóvel atualizado!", icon="✅", key="succ_upd_imov")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_imov")
+            with c2:
+                if st.button("🗑️ Excluir Imóvel", key="btn_del_imov"):
+                    supa_delete("imovel_rural","id",sel)
+                    st.success("Imóvel excluído!", icon="✅", key="succ_del_imov")
+                    rerun_app()
 
-def reports_page():
-    """Página de relatórios financeiros"""
-    st.header("📊 Relatórios Financeiros", divider="green")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        tipo_relatorio = st.selectbox("Tipo de Relatório", ["Balancete", "Razão", "DRE"])
-        periodo = st.selectbox("Período", ["Mensal", "Trimestral", "Semestral", "Anual", "Personalizado"])
-        
-        if periodo == "Personalizado":
-            data_inicio = st.date_input("Data Início")
-            data_fim = st.date_input("Data Fim")
-        else:
-            hoje = date.today()
-            if periodo == "Mensal":
-                data_inicio = hoje.replace(day=1)
-                data_fim = hoje
-            elif periodo == "Trimestral":
-                trimestre = (hoje.month - 1) // 3 + 1
-                data_inicio = date(hoje.year, 3 * trimestre - 2, 1)
-                data_fim = min(date(hoje.year, 3 * trimestre + 1, 1) - timedelta(days=1), hoje)
-            # Outros períodos implementados de forma similar
-    
-    with col2:
-        if st.button("Gerar Relatório", type="primary"):
-            st.subheader(f"Relatório {tipo_relatorio} - {periodo}")
-            st.info("Funcionalidade em desenvolvimento. Em breve disponível na versão 2.0")
-            
-            # Placeholder para dados do relatório
-            dados_placeholder = [
-                {"Conta": "Receitas Operacionais", "Valor": 150000.00},
-                {"Conta": "Custos de Produção", "Valor": -75000.00},
-                {"Conta": "Despesas Administrativas", "Valor": -25000.00},
-                {"Conta": "Resultado Operacional", "Valor": 50000.00}
-            ]
-            
-            df_relatorio = pd.DataFrame(dados_placeholder)
-            st.dataframe(
-                df_relatorio,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Valor": st.column_config.NumberColumn(format="R$ %.2f")
+    # ---- Contas ----
+    with tabs[1]:
+        st.subheader("Contas Bancárias")
+        df_ct = pd.DataFrame(supa_get(
+            "conta_bancaria",
+            "id,cod_conta,nome_banco,agencia,num_conta,saldo_inicial"
+        ))
+        st.dataframe(df_ct, use_container_width=True, key="tbl_contas")
+
+        with st.expander("➕ Nova Conta", key="exp_new_conta"):
+            with st.form("form_new_ct", clear_on_submit=True):
+                cod_ct = st.text_input("Código", key="new_ct_cod")
+                nb_ct  = st.text_input("Banco", key="new_ct_bank")
+                ag_ct  = st.text_input("Agência", key="new_ct_ag")
+                nc_ct  = st.text_input("Número da Conta", key="new_ct_num")
+                si_ct  = st.number_input("Saldo Inicial", format="%.2f", key="new_ct_si")
+                btn_ct = st.form_submit_button("Salvar", key="btn_new_ct")
+            if btn_ct:
+                payload = {
+                    "cod_conta": cod_ct,
+                    "nome_bancostrar": nb_ct,
+                    "agencia": ag_ct,
+                    "num_conta": nc_ct,
+                    "saldo_inicial": si_ct
                 }
-            )
-            
-            # Gráfico de barras placeholder
-            fig = px.bar(
-                df_relatorio,
-                x="Conta",
-                y="Valor",
-                color="Valor",
-                color_continuous_scale=["#e74c3c", "#2ecc71"],
-                range_color=[df_relatorio["Valor"].min(), df_relatorio["Valor"].max()]
-            )
-            fig.update_layout(
-                title="Resultado Financeiro",
-                xaxis_title="",
-                yaxis_title="Valor (R$)",
-                showlegend=False
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                try:
+                    supa_insert("conta_bancaria", payload)
+                    st.success("Conta criada!", icon="✅", key="succ_new_ct")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_ct")
 
-# --- Menu Principal ---
-def main():
-    """Função principal da aplicação"""
-    
-    # Sidebar com menu
-    with st.sidebar:
-        st.image("https://via.placeholder.com/200x50?text=AgroContábil", use_column_width=True)
-        st.title("Navegação")
-        
-        menu_options = {
-            "📊 Painel": dashboard_page,
-            "📝 Lançamentos": entries_page,
-            "📇 Cadastros": register_page,
-            "📑 Relatórios": reports_page
-        }
-        
-        selected = st.radio(
-            "Selecione uma página",
-            options=list(menu_options.keys()),
-            index=0,
-            label_visibility="collapsed"
-        )
-        
-        st.divider()
-        st.caption(f"Versão 1.0 | {date.today().year}")
-    
-    # Exibir página selecionada
-    menu_options[selected]()
+        if not df_ct.empty:
+            sel_ct = st.selectbox("ID p/ Editar/Excluir", df_ct["id"].tolist(), key="sel_ct")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Conta", key="btn_edit_ct"):
+                    rec = df_ct.loc[df_ct["id"]==sel_ct].iloc[0]
+                    with st.form("form_edit_ct", clear_on_submit=True):
+                        cod_e = st.text_input("Código", rec["cod_conta"], key="edit_ct_cod")
+                        nb_e  = st.text_input("Banco", rec["nome_banco"], key="edit_ct_bank")
+                        ag_e  = st.text_input("Agência", rec["agencia"], key="edit_ct_ag")
+                        nc_e  = st.text_input("Número da Conta", rec["num_conta"], key="edit_ct_num")
+                        si_e  = st.number_input("Saldo Inicial", value=rec["saldo_inicial"], format="%.2f", key="edit_ct_si")
+                        btn_e = st.form_submit_button("Atualizar", key="btn_upd_ct")
+                    if btn_e:
+                        payload = {
+                            "cod_conta": cod_e,
+                            "nome_banco": nb_e,
+                            "agencia": ag_e,
+                            "num_conta": nc_e,
+                            "saldo_inicial": si_e
+                        }
+                        try:
+                            supa_update("conta_bancaria","id",sel_ct,payload)
+                            st.success("Conta atualizada!", icon="✅", key="succ_upd_ct")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_ct")
+            with c2:
+                if st.button("🗑️ Excluir Conta", key="btn_del_ct"):
+                    supa_delete("conta_bancaria","id",sel_ct)
+                    st.success("Conta excluída!", icon="✅", key="succ_del_ct")
+                    rerun_app()
 
-if __name__ == "__main__":
-    main()
+    # ---- Participantes ----
+    with tabs[2]:
+        st.subheader("Participantes")
+        raw_pa = supa_get("participante","id,cpf_cnpj,nome,tipo_contraparte,data_cadastro")
+        df_pa  = pd.DataFrame(raw_pa)
+        df_pa["CPF/CNPJ"] = df_pa["cpf_cnpj"].map(format_cpf_cnpj)
+        df_pa["Tipo"]     = df_pa["tipo_contraparte"].map({1:"PF",2:"PJ",3:"Órgão Público",4:"Outros"})
+        st.dataframe(df_pa[["id","CPF/CNPJ","nome","Tipo","data_cadastro"]], use_container_width=True, key="tbl_pa")
+
+        with st.expander("➕ Novo Participante", key="exp_new_pa"):
+            with st.form("form_new_pa", clear_on_submit=True):
+                cpf = st.text_input("CPF/CNPJ", key="new_pa_cpf")
+                no  = st.text_input("Nome", key="new_pa_nome")
+                tp  = st.selectbox("Tipo", ["PF","PJ","Órgão Público","Outros"], key="new_pa_tipo")
+                btn = st.form_submit_button("Salvar", key="btn_new_pa")
+            if btn:
+                payload = {
+                    "cpf_cnpj": cpf,
+                    "nome": no,
+                    "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp)+1
+                }
+                try:
+                    supa_insert("participante", payload)
+                    st.success("Participante criado!", icon="✅", key="succ_new_pa")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_pa")
+
+        if not df_pa.empty:
+            sel_pa = st.selectbox("ID p/ Editar/Excluir", df_pa["id"].tolist(), key="sel_pa")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Participante", key="btn_edit_pa"):
+                    rec = df_pa.loc[df_pa["id"]==sel_pa].iloc[0]
+                    with st.form("form_edit_pa", clear_on_submit=True):
+                        cpf_e = st.text_input("CPF/CNPJ", rec["cpf_cnpj"], key="edit_pa_cpf")
+                        no_e  = st.text_input("Nome", rec["nome"], key="edit_pa_nome")
+                        tp_e  = st.selectbox("Tipo", ["PF","PJ","Órgão Público","Outros"],
+                                            index=["PF","PJ","Órgão Público","Outros"].index(rec["Tipo"]),
+                                            key="edit_pa_tipo")
+                        btn_e = st.form_submit_button("Atualizar", key="btn_upd_pa")
+                    if btn_e:
+                        payload = {
+                            "cpf_cnpj": cpf_e,
+                            "nome": no_e,
+                            "tipo_contraparte": ["PF","PJ","Órgão Público","Outros"].index(tp_e)+1
+                        }
+                        try:
+                            supa_update("participante","id",sel_pa,payload)
+                            st.success("Participante atualizado!", icon="✅", key="succ_upd_pa")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_pa")
+            with c2:
+                if st.button("🗑️ Excluir Participante", key="btn_del_pa"):
+                    supa_delete("participante","id",sel_pa)
+                    st.success("Participante excluído!", icon="✅", key="succ_del_pa")
+                    rerun_app()
+
+    # ---- Culturas ----
+    with tabs[3]:
+        st.subheader("Culturas")
+        df_cu = pd.DataFrame(supa_get("cultura","id,nome,tipo,ciclo,unidade_medida"))
+        st.dataframe(df_cu, use_container_width=True, key="tbl_cu")
+
+        with st.expander("➕ Nova Cultura", key="exp_new_cu"):
+            with st.form("form_new_cu", clear_on_submit=True):
+                nm = st.text_input("Nome", key="new_cu_nome")
+                tp = st.text_input("Tipo", key="new_cu_tipo")
+                ci = st.text_input("Ciclo", key="new_cu_ciclo")
+                um = st.text_input("Unidade Medida", key="new_cu_um")
+                btn = st.form_submit_button("Salvar", key="btn_new_cu")
+            if btn:
+                payload = {"nome": nm, "tipo": tp, "ciclo": ci, "unidade_medida": um}
+                try:
+                    supa_insert("cultura", payload)
+                    st.success("Cultura criada!", icon="✅", key="succ_new_cu")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_cu")
+
+        if not df_cu.empty:
+            sel_cu = st.selectbox("ID p/ Editar/Excluir", df_cu["id"].tolist(), key="sel_cu")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Cultura", key="btn_edit_cu"):
+                    rec = df_cu.loc[df_cu["id"]==sel_cu].iloc[0]
+                    with st.form("form_edit_cu", clear_on_submit=True):
+                        nm_e = st.text_input("Nome", rec["nome"], key="edit_cu_nome")
+                        tp_e = st.text_input("Tipo", rec["tipo"], key="edit_cu_tipo")
+                        ci_e = st.text_input("Ciclo", rec["ciclo"], key="edit_cu_ciclo")
+                        um_e = st.text_input("Unidade Medida", rec["unidade_medida"], key="edit_cu_um")
+                        btn_e= st.form_submit_button("Atualizar", key="btn_upd_cu")
+                    if btn_e:
+                        payload = {"nome": nm_e, "tipo": tp_e, "ciclo": ci_e, "unidade_medida": um_e}
+                        try:
+                            supa_update("cultura","id",sel_cu,payload)
+                            st.success("Cultura atualizada!", icon="✅", key="succ_upd_cu")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_cu")
+            with c2:
+                if st.button("🗑️ Excluir Cultura", key="btn_del_cu"):
+                    supa_delete("cultura","id",sel_cu)
+                    st.success("Cultura excluída!", icon="✅", key="succ_del_cu")
+                    rerun_app()
+
+    # ---- Áreas ----
+    with tabs[4]:
+        st.subheader("Áreas de Produção")
+        imovs = supa_get("imovel_rural","id,nome_imovel")
+        mapa_i = {i["id"]: i["nome_imovel"] for i in imovs}
+        cults = supa_get("cultura","id,nome")
+        mapa_c = {c["id"]: c["nome"] for c in cults}
+
+        df_ar = pd.DataFrame(supa_get(
+            "area_producao","id,imovel_id,cultura_id,area,data_plantio,data_colheita_estimada,produtividade_estimada"
+        ))
+        if not df_ar.empty:
+            df_ar["Imóvel"]  = df_ar["imovel_id"].map(mapa_i)
+            df_ar["Cultura"] = df_ar["cultura_id"].map(mapa_c)
+            st.dataframe(df_ar[[
+                "id","Imóvel","Cultura","area","data_plantio","data_colheita_estimada","produtividade_estimada"
+            ]], use_container_width=True, key="tbl_ar")
+
+        with st.expander("➕ Nova Área", key="exp_new_ar"):
+            with st.form("form_new_ar", clear_on_submit=True):
+                imv = st.selectbox("Imóvel", options=list(mapa_i.keys()), format_func=lambda x: mapa_i[x], key="new_ar_imv")
+                cul = st.selectbox("Cultura", options=list(mapa_c.keys()), format_func=lambda x: mapa_c[x], key="new_ar_cul")
+                ar  = st.number_input("Área (ha)", format="%.2f", key="new_ar_area")
+                dp  = st.date_input("Plantio", key="new_ar_dp")
+                dc  = st.date_input("Colheita Estimada", key="new_ar_dc")
+                pe  = st.number_input("Prod. Estimada", format="%.2f", key="new_ar_pe")
+                btn = st.form_submit_button("Salvar", key="btn_new_ar")
+            if btn:
+                payload = {
+                    "imovel_id": imv,
+                    "cultura_id": cul,
+                    "area": ar,
+                    "data_plantio": dp.isoformat(),
+                    "data_colheita_estimada": dc.isoformat(),
+                    "produtividade_estimada": pe
+                }
+                try:
+                    supa_insert("area_producao", payload)
+                    st.success("Área criada!", icon="✅", key="succ_new_ar")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_ar")
+
+        if not df_ar.empty:
+            sel_ar = st.selectbox("ID p/ Editar/Excluir", df_ar["id"].tolist(), key="sel_ar")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Área", key="btn_edit_ar"):
+                    rec = df_ar.loc[df_ar["id"]==sel_ar].iloc[0]
+                    with st.form("form_edit_ar", clear_on_submit=True):
+                        imv_e = st.selectbox("Imóvel", options=list(mapa_i.keys()),
+                                             index=list(mapa_i).index(rec["imovel_id"]),
+                                             format_func=lambda x: mapa_i[x], key="edit_ar_imv")
+                        cul_e = st.selectbox("Cultura", options=list(mapa_c.keys()),
+                                             index=list(mapa_c).index(rec["cultura_id"]),
+                                             format_func=lambda x: mapa_c[x], key="edit_ar_cul")
+                        ar_e  = st.number_input("Área (ha)", value=rec["area"], format="%.2f", key="edit_ar_area")
+                        dp_e  = st.date_input("Plantio", datetime.fromisoformat(rec["data_plantio"]).date(), key="edit_ar_dp")
+                        dc_e  = st.date_input("Colheita Estimada", datetime.fromisoformat(rec["data_colheita_estimada"]).date(), key="edit_ar_dc")
+                        pe_e  = st.number_input("Prod. Estimada", value=rec["produtividade_estimada"], format="%.2f", key="edit_ar_pe")
+                        btn_e = st.form_submit_button("Atualizar", key="btn_upd_ar")
+                    if btn_e:
+                        payload = {
+                            "imovel_id": imv_e,
+                            "cultura_id": cul_e,
+                            "area": ar_e,
+                            "data_plantio": dp_e.isoformat(),
+                            "data_colheita_estimada": dc_e.isoformat(),
+                            "produtividade_estimada": pe_e
+                        }
+                        try:
+                            supa_update("area_producao","id",sel_ar,payload)
+                            st.success("Área atualizada!", icon="✅", key="succ_upd_ar")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_ar")
+            with c2:
+                if st.button("🗑️ Excluir Área", key="btn_del_ar"):
+                    supa_delete("area_producao","id",sel_ar)
+                    st.success("Área excluída!", icon="✅", key="succ_del_ar")
+                    rerun_app()
+
+    # ---- Estoque ----
+    with tabs[5]:
+        st.subheader("Estoque")
+        imovs = supa_get("imovel_rural","id,nome_imovel")
+        mapa_i = {i["id"]: i["nome_imovel"] for i in imovs}
+
+        df_es = pd.DataFrame(supa_get(
+            "estoque","id,produto,quantidade,unidade_medida,valor_unitario,local_armazenamento,data_entrada,data_validade,imovel_id"
+        ))
+        if not df_es.empty:
+            df_es["Imóvel"] = df_es["imovel_id"].map(mapa_i)
+            st.dataframe(df_es[[
+                "id","produto","quantidade","unidade_medida",
+                "valor_unitario","local_armazenamento","data_validade","Imóvel"
+            ]], use_container_width=True, key="tbl_es")
+
+        with st.expander("➕ Novo Estoque", key="exp_new_es"):
+            with st.form("form_new_es", clear_on_submit=True):
+                prod  = st.text_input("Produto", key="new_es_prod")
+                qt    = st.number_input("Quantidade", format="%.2f", key="new_es_qt")
+                um    = st.text_input("Unidade Medida", key="new_es_um")
+                vu    = st.number_input("Valor Unitário", format="%.2f", key="new_es_vu")
+                la    = st.text_input("Local de Armazenamento", key="new_es_la")
+                de    = st.date_input("Data de Entrada", date.today(), key="new_es_de")
+                dv    = st.date_input("Data de Validade", date.today(), key="new_es_dv")
+                imv_e = st.selectbox("Imóvel", options=list(mapa_i.keys()), format_func=lambda x: mapa_i[x], key="new_es_imv")
+                btn   = st.form_submit_button("Salvar", key="btn_new_es")
+            if btn:
+                payload = {
+                    "produto":            prod,
+                    "quantidade":         qt,
+                    "unidade_medida":     um,
+                    "valor_unitario":     vu,
+                    "local_armazenamento":la,
+                    "data_entrada":       de.isoformat(),
+                    "data_validade":      dv.isoformat(),
+                    "imovel_id":          imv_e
+                }
+                try:
+                    supa_insert("estoque", payload)
+                    st.success("Estoque criado!", icon="✅", key="succ_new_es")
+                    rerun_app()
+                except requests.HTTPError as e:
+                    st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_new_es")
+
+        if not df_es.empty:
+            sel_es = st.selectbox("ID p/ Editar/Excluir", df_es["id"].tolist(), key="sel_es")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Estoque", key="btn_edit_es"):
+                    rec = df_es.loc[df_es["id"]==sel_es].iloc[0]
+                    with st.form("form_edit_es", clear_on_submit=True):
+                        prod_e = st.text_input("Produto", rec["produto"], key="edit_es_prod")
+                        qt_e   = st.number_input("Quantidade", value=rec["quantidade"], format="%.2f", key="edit_es_qt")
+                        um_e   = st.text_input("Unidade Medida", rec["unidade_medida"], key="edit_es_um")
+                        vu_e   = st.number_input("Valor Unitário", value=rec["valor_unitario"], format="%.2f", key="edit_es_vu")
+                        la_e   = st.text_input("Local de Armazenamento", rec["local_armazenamento"], key="edit_es_la")
+                        de_e   = st.date_input("Data de Entrada", datetime.fromisoformat(rec["data_entrada"]).date(), key="edit_es_de")
+                        dv_e   = st.date_input("Data de Validade", datetime.fromisoformat(rec["data_validade"]).date(), key="edit_es_dv")
+                        imv_ed = st.selectbox("Imóvel", options=list(mapa_i.keys()),
+                                              index=list(mapa_i).index(rec["imovel_id"]),
+                                              format_func=lambda x: mapa_i[x], key="edit_es_imv")
+                        btn_e  = st.form_submit_button("Atualizar", key="btn_upd_es")
+                    if btn_e:
+                        payload = {
+                            "produto":            prod_e,
+                            "quantidade":         qt_e,
+                            "unidade_medida":     um_e,
+                            "valor_unitario":     vu_e,
+                            "local_armazenamento":la_e,
+                            "data_entrada":       de_e.isoformat(),
+                            "data_validade":      dv_e.isoformat(),
+                            "imovel_id":          imv_ed
+                        }
+                        try:
+                            supa_update("estoque","id",sel_es,payload)
+                            st.success("Estoque atualizado!", icon="✅", key="succ_upd_es")
+                            rerun_app()
+                        except requests.HTTPError as e:
+                            st.error(f"Erro {e.response.status_code}: {e.response.text}", key="err_upd_es")
+            with c2:
+                if st.button("🗑️ Excluir Estoque", key="btn_del_es"):
+                    supa_delete("estoque","id",sel_es)
+                    st.success("Estoque excluído!", icon="✅", key="succ_del_es")
+                    rerun_app()
+
+# --- 4) Relatórios ---
+def show_relatorios():
+    st.header("📑 Relatórios")
+    rpt = st.radio("Escolha relatório", ["Balancete","Razão"], key="rel_tp")
+    d1  = st.date_input("Data inicial", date.today().replace(day=1), key="rel_d1")
+    d2  = st.date_input("Data final",   date.today(),             key="rel_d2")
+    if st.button("Gerar", key="btn_gen_rel"):
+        st.info(f"Gerando **{rpt}** de {d1} a {d2}… 🚧 Em desenvolvimento", key="info_gen_rel")
+
+# --- Menu lateral e roteamento ---
+st.sidebar.title("🔍 Menu")
+choice = st.sidebar.radio(
+    "",
+    ["Painel","Lançamentos","Cadastros","Relatórios"],
+    key="menu_sel"
+)
+
+if choice == "Painel":
+    show_dashboard()
+elif choice == "Lançamentos":
+    show_lancamentos()
+elif choice == "Cadastros":
+    show_cadastros()
+else:
+    show_relatorios()
