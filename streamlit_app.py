@@ -1,3 +1,8 @@
+import runpy
+
+# Executa seu Streamlit app que está em streamlit_app.py
+runpy.run_path("streamlit_app.py", run_name="__main__")
+
 import os
 import json
 import streamlit as st
