@@ -1,8 +1,3 @@
-import runpy
-
-# Executa seu Streamlit app que está em streamlit_app.py
-runpy.run_path("streamlit_app.py", run_name="__main__")
-
 import os
 import json
 import streamlit as st
@@ -10,11 +5,10 @@ from datetime import date
 import requests
 import plotly.graph_objects as go
 
-# — credenciais via Streamlit Secrets —
+# — Supabase via REST usando streamlit secrets —
 SUPABASE_URL      = st.secrets["SUPABASE_URL"]
 SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 
-# — cabeçalhos para REST —
 headers = {
     "apikey":        SUPABASE_ANON_KEY,
     "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
@@ -22,7 +16,6 @@ headers = {
 }
 
 def fetch_lancamentos(start: date, end: date):
-    """Retorna lista de dicts com valor_entrada e valor_saida."""
     url = (
         f"{SUPABASE_URL}/rest/v1/lancamento"
         f"?select=valor_entrada,valor_saida"
@@ -34,13 +27,11 @@ def fetch_lancamentos(start: date, end: date):
     return r.json()
 
 def insert_lancamento(payload: dict):
-    """Insere um lançamento novo."""
     url = f"{SUPABASE_URL}/rest/v1/lancamento"
     r = requests.post(url, headers=headers, data=json.dumps(payload))
     r.raise_for_status()
     return r.json()
 
-# — Streamlit App —
 st.set_page_config(page_title="AgroContábil", layout="wide")
 st.sidebar.title("Menu")
 page = st.sidebar.radio("", ["Painel", "Lançamentos", "Cadastros"])
@@ -57,8 +48,8 @@ if page == "Painel":
     saldo = rec - desp
 
     col1.metric("Saldo Total", f"R$ {saldo:,.2f}")
-    col2.metric("Receitas"    , f"R$ {rec:,.2f}")
-    col3.metric("Despesas"    , f"R$ {desp:,.2f}")
+    col2.metric("Receitas"    , f"R$ {rec: ,.2f}")
+    col3.metric("Despesas"    , f"R$ {desp: ,.2f}")
 
     fig = go.Figure(go.Pie(
         labels=["Receitas","Despesas"],
@@ -70,9 +61,9 @@ if page == "Painel":
 
 elif page == "Lançamentos":
     st.header("📝 Lançamentos")
-    # busca tudo (poderia por paginação/filtro também)
-    url_all = f"{SUPABASE_URL}/rest/v1/lancamento?select=*"
-    df = requests.get(url_all, headers=headers).json()
+    # Exibe todos
+    all_url = f"{SUPABASE_URL}/rest/v1/lancamento?select=*"
+    df = requests.get(all_url, headers=headers).json()
     st.dataframe(df, use_container_width=True)
 
     with st.expander("➕ Novo Lançamento"):
