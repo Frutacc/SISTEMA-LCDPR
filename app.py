@@ -14,11 +14,13 @@ HEADERS = {
 }
 
 # --- Helpers Supabase CRUD ---
+@st.cache_data(ttl=300)
 def supa_get(table, select="*", filters=None):
     url = f"{SUPABASE_URL}/rest/v1/{table}?select={select}"
     if filters:
         url += "&" + "&".join(filters)
-    r = requests.get(url, headers=HEADERS); r.raise_for_status()
+    r = requests.get(url, headers=HEADERS)
+    r.raise_for_status()
     return r.json()
 
 def supa_insert(table, payload):
@@ -63,9 +65,9 @@ if page == "Painel":
     saldo = rec - desp
     # Métricas
     m1, m2, m3 = st.columns(3)
-    m1.metric("💰 Saldo Total", f"R$ {saldo:,.2f}", key="met_saldo")
-    m2.metric("📈 Receitas"    , f"R$ {rec:,.2f}",   key="met_rec")
-    m3.metric("📉 Despesas"    , f"R$ {desp:,.2f}",   key="met_desp")
+    m1.metric("💰 Saldo Total", f"R$ {saldo:,.2f}")
+    m2.metric("📈 Receitas"    , f"R$ {rec:,.2f}")
+    m3.metric("📉 Despesas"    , f"R$ {desp:,.2f}")
     # Pizza animada
     fig = go.Figure(go.Pie(
         labels=["Receitas","Despesas"],
@@ -129,10 +131,15 @@ elif page == "Lançamentos":
     with st.expander("➕ Novo Lançamento", expanded=False):
         with st.form("form_lanc_new", clear_on_submit=True):
             dn  = st.date_input("Data", date.today(), key="new_d")
-            imv = st.selectbox(
-                "Imóvel", list(mapa_i.items()), 
-                format_func=lambda x:x[1], key="new_imv"
-            )[0]
+            # primeiro pega o item completo (tupla id, nome)
+            sel_imv = st.selectbox(
+                "Imóvel", list(mapa_i.items()),
+                format_func=lambda x: x[1],
+                key="new_imv"
+            )
+            # depois extrai só o ID
+            imv = sel_imv[0]
+
             cta = st.selectbox(
                 "Conta" , list(mapa_c.items()), 
                 format_func=lambda x:x[1], key="new_cta"
@@ -209,70 +216,102 @@ elif page == "Lançamentos":
 elif page == "Cadastros":
     st.header("📇 Cadastros")
     tabs = st.tabs(["Imóveis","Contas","Participantes","Culturas","Áreas","Estoque"])
+
     # Imóveis
     with tabs[0]:
         st.subheader("🏠 Imóveis Rurais")
-        df_im = pd.DataFrame(supa_get("imovel_rural",
+        df_im = pd.DataFrame(supa_get(
+            "imovel_rural",
             "id,cod_imovel,nome_imovel,uf,area_total,area_utilizada,participacao"
         ))
         st.dataframe(df_im, use_container_width=True, key="tbl_im")
+
+        # formulário de criação
         with st.expander("➕ Novo Imóvel", expanded=False):
             with st.form("form_im_new", clear_on_submit=True):
                 cod = st.text_input("Código", key="im_new_cod")
-                nome= st.text_input("Nome"  , key="im_new_nome")
+                nome = st.text_input("Nome", key="im_new_nome")
                 end = st.text_input("Endereço", key="im_new_end")
-                uf  = st.text_input("UF"    , key="im_new_uf")
-                cm  = st.text_input("Cód. Mun", key="im_new_cm")
-                cep = st.text_input("CEP"   , key="im_new_cep")
-                te  = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="im_new_te")
-                part= st.number_input("Participação (%)", value=100.0, format="%.2f", key="im_new_part")
-                at  = st.number_input("Área Total (ha)", format="%.2f", key="im_new_at")
-                au  = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
-                ok  = st.form_submit_button("Salvar", use_container_width=True)
+                uf = st.text_input("UF", key="im_new_uf")
+                cm = st.text_input("Cód. Município", key="im_new_cm")
+                cep = st.text_input("CEP", key="im_new_cep")
+                te = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="im_new_te")
+                part = st.number_input("Participação (%)", value=100.0, format="%.2f", key="im_new_part")
+                at = st.number_input("Área Total (ha)", format="%.2f", key="im_new_at")
+                au = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
+                ok = st.form_submit_button("Salvar")
             if ok:
-                supa_insert("imovel_rural",{
-                    "cod_imovel":cod,"nome_imovel":nome,
-                    "endereco":end,"uf":uf,"cod_mun":cm,"cep":cep,
-                    "tipo_exploracao":te,"participacao":part,
-                    "area_total":at,"area_utilizada":au
+                supa_insert("imovel_rural", {
+                    "cod_imovel": cod,
+                    "nome_imovel": nome,
+                    "endereco": end,
+                    "uf": uf,
+                    "cod_mun": cm,
+                    "cep": cep,
+                    "tipo_exploracao": te,
+                    "participacao": part,
+                    "area_total": at,
+                    "area_utilizada": au
                 })
                 st.success("Imóvel criado!", icon="✅")
                 st.experimental_rerun()
-        sel = st.selectbox("ID p/ Editar/Excluir", df_im["id"].tolist(), key="sel_im")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("✏️ Editar Imóvel", key="btn_edit_im"):
-                rec = df_im[df_im["id"]==sel].iloc[0]
-                with st.form("form_im_edit", clear_on_submit=True):
-                    cod = st.text_input("Código", rec["cod_imovel"], key="im_edit_cod")
-                    nome= st.text_input("Nome", rec["nome_imovel"], key="im_edit_nome")
-                    end = st.text_input("Endereço", rec["uf"], key="im_edit_end")
-                    uf  = st.text_input("UF", rec["uf"], key="im_edit_uf")
-                    cm  = st.text_input("Cód. Mun", rec["cod_mun"], key="im_edit_cm")
-                    cep = st.text_input("CEP", rec["cep"], key="im_edit_cep")
-                    te  = st.selectbox("Tipo Exploração", [1,2,3,4,5,6],
-                                       index=int(rec["tipo_exploracao"])-1, key="im_edit_te")
-                    part= st.number_input("Participação (%)",
-                                         value=float(rec["participacao"]), format="%.2f", key="im_edit_part")
-                    at  = st.number_input("Área Total (ha)",
-                                         value=float(rec["area_total"] or 0), format="%.2f", key="im_edit_at")
-                    au  = st.number_input("Área Utilizada (ha)",
-                                         value=float(rec["area_utilizada"] or 0), format="%.2f", key="im_edit_au")
-                    ok2 = st.form_submit_button("Atualizar", use_container_width=True)
-                if ok2:
-                    supa_update("imovel_rural","id",sel,{
-                        "cod_imovel":cod,"nome_imovel":nome,
-                        "endereco":end,"uf":uf,"cod_mun":cm,"cep":cep,
-                        "tipo_exploracao":te,"participacao":part,
-                        "area_total":at,"area_utilizada":au
-                    })
-                    st.success("Atualizado!", icon="✅")
+
+        # edição / exclusão
+        if not df_im.empty:
+            sel = st.selectbox("ID p/ Editar/Excluir", df_im["id"].tolist(), key="sel_im")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✏️ Editar Imóvel", key="btn_edit_im"):
+                    rec = df_im[df_im["id"] == sel].iloc[0]
+                    with st.form("form_im_edit", clear_on_submit=True):
+                        cod_e = st.text_input("Código", rec["cod_imovel"], key="im_edit_cod")
+                        nome_e = st.text_input("Nome", rec["nome_imovel"], key="im_edit_nome")
+                        end_e = st.text_input("Endereço", rec["endereco"], key="im_edit_end")
+                        uf_e = st.text_input("UF", rec["uf"], key="im_edit_uf")
+                        cm_e = st.text_input("Cód. Município", rec["cod_mun"], key="im_edit_cm")
+                        cep_e = st.text_input("CEP", rec["cep"], key="im_edit_cep")
+                        te_e = st.selectbox(
+                            "Tipo Exploração", [1,2,3,4,5,6],
+                            index=int(rec["tipo_exploracao"]) - 1,
+                            key="im_edit_te"
+                        )
+                        part_e = st.number_input(
+                            "Participação (%)", value=float(rec["participacao"]),
+                            format="%.2f", key="im_edit_part"
+                        )
+                        at_e = st.number_input(
+                            "Área Total (ha)",
+                            value=float(rec["area_total"] or 0),
+                            format="%.2f", key="im_edit_at"
+                        )
+                        au_e = st.number_input(
+                            "Área Utilizada (ha)",
+                            value=float(rec["area_utilizada"] or 0),
+                            format="%.2f", key="im_edit_au"
+                        )
+                        ok2 = st.form_submit_button("Atualizar")
+                    if ok2:
+                        supa_update("imovel_rural", "id", sel, {
+                            "cod_imovel": cod_e,
+                            "nome_imovel": nome_e,
+                            "endereco": end_e,
+                            "uf": uf_e,
+                            "cod_mun": cm_e,
+                            "cep": cep_e,
+                            "tipo_exploracao": te_e,
+                            "participacao": part_e,
+                            "area_total": at_e,
+                            "area_utilizada": au_e
+                        })
+                        st.success("Imóvel atualizado!", icon="✅")
+                        st.experimental_rerun()
+            with c2:
+                if st.button("🗑️ Excluir Imóvel", key="btn_del_im"):
+                    supa_delete("imovel_rural", "id", sel)
+                    st.success("Imóvel excluído!", icon="✅")
                     st.experimental_rerun()
-        with c2:
-            if st.button("🗑️ Excluir Imóvel", key="btn_del_im"):
-                supa_delete("imovel_rural","id",sel)
-                st.success("Excluído!", icon="✅")
-                st.experimental_rerun()
+        else:
+            st.info("Nenhum imóvel cadastrado ainda.", icon="ℹ️")
 
     # Contas
     with tabs[1]:
