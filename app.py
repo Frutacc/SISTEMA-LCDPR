@@ -223,19 +223,35 @@ elif page == "Cadastros":
             "id,cod_imovel,nome_imovel,uf,area_total,area_utilizada,participacao"
         ))
         st.dataframe(df_im, use_container_width=True, key="tbl_im")
-        with st.expander("➕ Novo Imóvel", expanded=False):
-            with st.form("form_im_new", clear_on_submit=True):
-                cod = st.text_input("Código", key="im_new_cod")
-                nome= st.text_input("Nome", key="im_new_nome")
-                end = st.text_input("Endereço", key="im_new_end")
-                uf  = st.text_input("UF", key="im_new_uf")
-                cm  = st.text_input("Cód. Município", key="im_new_cm")
-                cep = st.text_input("CEP", key="im_new_cep")
-                te  = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="im_new_te")
-                part= st.number_input("Participação (%)", value=100.0, format="%.2f", key="im_new_part")
-                at  = st.number_input("Área Total (ha)", format="%.2f", key="im_new_at")
-                au  = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
-                ok  = st.form_submit_button("Salvar")
+        with st.form("form_im_new", clear_on_submit=True):
+            cod     = st.text_input("Código", key="im_new_cod")
+            nome    = st.text_input("Nome", key="im_new_nome")
+            end     = st.text_input("Endereço", key="im_new_end")
+            bairro  = st.text_input("Bairro", key="im_new_bairro")               # <= novo
+            uf      = st.text_input("UF", key="im_new_uf")
+            cm      = st.text_input("Cód. Município", key="im_new_cm")
+            cep     = st.text_input("CEP", key="im_new_cep")
+            te      = st.selectbox("Tipo Exploração", [1,2,3,4,5,6], key="im_new_te")
+            part    = st.number_input("Participação (%)", value=100.0, format="%.2f", key="im_new_part")
+            at      = st.number_input("Área Total (ha)", format="%.2f", key="im_new_at")
+            au      = st.number_input("Área Utilizada (ha)", format="%.2f", key="im_new_au")
+            ok      = st.form_submit_button("Salvar")
+        if ok:
+            supa_insert("imovel_rural", {
+                "cod_imovel":        cod,
+                "nome_imovel":       nome,
+                "endereco":          end,
+                "bairro":            bairro,       # <= inclua aqui
+                "uf":                uf,
+                "cod_mun":           cm,
+                "cep":               cep,
+                "tipo_exploracao":   te,
+                "participacao":      part,
+                "area_total":        at,
+                "area_utilizada":    au
+            })
+            st.success("Imóvel criado!", icon="✅")
+            st.experimental_rerun()
             if ok:
                 supa_insert("imovel_rural", {
                     "cod_imovel":cod, "nome_imovel":nome,
