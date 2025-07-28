@@ -3,6 +3,11 @@ import streamlit as st
 from datetime import date
 from supabase import create_client, Client
 import plotly.graph_objects as go
+ app.py (na raiz)
+import runpy
+
+# executa o streamlit app que está dentro da pasta sistema-lcdpr
+runpy.run_path("sistema-lcdpr/app.py", run_name="__main__")
 
 # — inicializa Supabase —
 SUPABASE_URL = os.environ["SUPABASE_URL"]
